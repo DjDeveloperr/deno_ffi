@@ -1,0 +1,15 @@
+[package]
+name = "deno_ffi"
+version = "0.1.0"
+authors = ["DjDeveloperr <djdeveloperr@gmail.com>"]
+edition = "2018"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+deno_core = { git = "https://github.com/denoland/deno.git", branch = "main" }
+dlopen = "0.1.8"
+libc = "0.2.80"
+libffi = "1.0.0"
+serde = { version = "1.0", features = ["derive"] }
