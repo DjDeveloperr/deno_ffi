@@ -1,5 +1,5 @@
-use std::cell::RefCell;
 use std::{borrow::Cow, io::Write};
+use std::{cell::RefCell, ffi::CStr};
 
 use deno_core::error::bad_resource_id;
 use deno_core::serde::Deserialize;
@@ -12,6 +12,7 @@ use deno_core::{error::AnyError, serde_json::Value};
 use deno_core::{op_sync, serde_json::json};
 
 use dlopen::raw::Library;
+use libc::{c_char, c_void};
 use libffi::high::{arg, call, Arg, CodePtr};
 use std::ffi::CString;
 
@@ -30,6 +31,7 @@ pub fn init() -> Extension {
             ("op_dl_open", op_sync(op_dl_open)),
             ("op_dl_close", op_sync(op_dl_close)),
             ("op_dl_call", op_sync(op_dl_call)),
+            ("op_dl_ptr_read", op_sync(op_dl_ptr_read)),
         ])
         .build()
 }
@@ -66,6 +68,7 @@ struct DlCallParam {
 #[derive(Deserialize)]
 struct DlCallArgs {
     pub rid: ResourceId,
+    pub ptr: Option<u64>,
     pub name: String,
     pub params: Vec<DlCallParam>,
     pub rtype: String,
@@ -102,7 +105,13 @@ fn op_dl_call(
 
     let lib = lib_res.0.borrow_mut();
 
-    let fn_ptr = unsafe { lib.symbol(&options.name)? };
+    let fn_ptr = {
+        if options.ptr.is_some() {
+            options.ptr.unwrap() as *const c_void
+        } else {
+            unsafe { lib.symbol(&options.name)? }
+        }
+    };
     let code_ptr = CodePtr::from_ptr(fn_ptr);
 
     let mut vecs = vec![];
@@ -181,14 +190,37 @@ fn op_dl_call(
                 v.write(slice).unwrap();
                 json!(v)
             }
-            "str" => json!(
-                CString::from_raw(call::<*mut i8>(code_ptr, args.as_slice()))
-                    .into_string()
-                    .unwrap()
-            ),
+            "raw_ptr" => {
+                let ptr = call::<*const u8>(code_ptr, args.as_slice());
+                json!(format!("{:?}", ptr))
+            }
+            "str" => {
+                let ptr = call::<*const c_char>(code_ptr, args.as_slice());
+                let cstr = CStr::from_ptr(ptr);
+                let res = cstr.to_str().unwrap().to_string();
+                json!(res)
+            }
             _ => json!(null),
         }
     };
 
     Ok(result)
+}
+
+#[derive(Deserialize)]
+struct PtrReadArgs {
+    pub addr: u64,
+    pub len: usize,
+}
+
+fn op_dl_ptr_read(
+    _state: &mut OpState,
+    options: PtrReadArgs,
+    _zero_copy: Option<ZeroCopyBuf>,
+) -> Result<Value, AnyError> {
+    let ptr = options.addr as *const u8;
+    let mut v: Vec<u8> = Vec::new();
+    let slice = unsafe { std::slice::from_raw_parts(ptr, options.len) };
+    v.write(slice).unwrap();
+    Ok(json!(v))
 }

@@ -14,6 +14,7 @@ export type Type =
   | "f64"
   | "char"
   | "ptr"
+  | "raw_ptr"
   | "str";
 
 export interface LibraryMethod {
@@ -36,8 +37,11 @@ export class Library {
     this.#rid = core.opSync("op_dl_open", name);
   }
 
-  call(name: string, ...params: any[]) {
-    const method = this.methods[name];
+  call(
+    name: string | { ptr: number; define: LibraryMethod },
+    ...params: any[]
+  ) {
+    const method = typeof name === "object" ? name.define : this.methods[name];
     if (!method) throw new Error("Method not defined");
     if (params.length !== (method.params?.length ?? 0)) {
       throw new Error(
@@ -48,7 +52,8 @@ export class Library {
 
     const data = {
       rid: this.#rid,
-      name,
+      ptr: typeof name === "object" ? name.ptr : undefined,
+      name: typeof name === "object" ? "" : name,
       params: (params ?? []).map((e, i) => {
         let type = method.params![i];
         if (type === "char") {
@@ -79,10 +84,19 @@ export class Library {
       rlen: typeof method.returns === "object" ? method.returns.len : undefined,
     };
 
-    return core.opSync("op_dl_call", JSON.stringify(data));
+    let res = core.opSync("op_dl_call", JSON.stringify(data));
+    if (data.rtype === "raw_ptr") res = parseInt(res, 16);
+    return res;
   }
 
   close() {
     core.opSync("op_dl_close", this.#rid);
   }
+}
+
+export function readPointer(addr: number, len: number): Uint8Array {
+  return new Uint8Array(core.opSync("op_dl_ptr_read", {
+    addr,
+    len,
+  }));
 }
