@@ -1,5 +1,5 @@
-use std::borrow::Cow;
 use std::cell::RefCell;
+use std::{borrow::Cow, io::Write};
 
 use deno_core::error::bad_resource_id;
 use deno_core::serde::Deserialize;
@@ -12,7 +12,6 @@ use deno_core::{error::AnyError, serde_json::Value};
 use deno_core::{op_sync, serde_json::json};
 
 use dlopen::raw::Library;
-// use libc::c_char;
 use libffi::high::{arg, call, Arg, CodePtr};
 use std::ffi::CString;
 
@@ -70,6 +69,7 @@ struct DlCallArgs {
     pub name: String,
     pub params: Vec<DlCallParam>,
     pub rtype: String,
+    pub rlen: Option<usize>,
 }
 
 enum ArgType {
@@ -82,11 +82,10 @@ enum ArgType {
     I32(i32),
     I64(i64),
     U64(u64),
-    // I128(i128),
-    // U128(u128),
     F32(f32),
     F64(f64),
     String(*mut i8),
+    Pointer(*mut u8),
 }
 
 fn op_dl_call(
@@ -106,6 +105,8 @@ fn op_dl_call(
     let fn_ptr = unsafe { lib.symbol(&options.name)? };
     let code_ptr = CodePtr::from_ptr(fn_ptr);
 
+    let mut vecs = vec![];
+
     let cargs: Vec<ArgType> = options
         .params
         .iter()
@@ -120,6 +121,18 @@ fn op_dl_call(
             "i64" => ArgType::I64(param.value.as_str().unwrap().parse::<i64>().unwrap()),
             "f32" => ArgType::F32(param.value.as_f64().unwrap() as f32),
             "f64" => ArgType::F64(param.value.as_f64().unwrap()),
+            "ptr" => {
+                let arr = param.value.as_array().unwrap();
+                let mut v = vec![];
+                for e in arr {
+                    v.push(e.as_i64().unwrap() as u8);
+                }
+                let len = vecs.len();
+                vecs.push(v);
+                let v = vecs.get_mut(len).unwrap();
+                let ptr = v.as_mut_slice().as_mut_ptr();
+                ArgType::Pointer(ptr)
+            }
             "str" => ArgType::String(
                 CString::new(param.value.as_str().unwrap())
                     .unwrap()
@@ -129,7 +142,7 @@ fn op_dl_call(
         })
         .collect();
 
-    let mut args: Vec<Arg> = cargs
+    let args: Vec<Arg> = cargs
         .iter()
         .map(|value| match value {
             ArgType::Void => arg(&()),
@@ -141,17 +154,12 @@ fn op_dl_call(
             ArgType::U16(v) => arg(v),
             ArgType::U32(v) => arg(v),
             ArgType::U64(v) => arg(v),
-            // ArgType::I128(v) => arg(v),
-            // ArgType::U128(v) => arg(v),
             ArgType::F32(v) => arg(v),
             ArgType::F64(v) => arg(v),
             ArgType::String(val) => arg(val),
+            ArgType::Pointer(val) => arg(val),
         })
         .collect();
-
-    let pt = libffi::middle::Type::structure(vec![libffi::middle::Type::u16()]).as_raw_ptr();
-
-    args.push(arg(&pt));
 
     let result = unsafe {
         match options.rtype.as_str() {
@@ -164,14 +172,15 @@ fn op_dl_call(
             "u32" => json!(call::<u32>(code_ptr, args.as_slice())),
             "i64" => json!(call::<i64>(code_ptr, args.as_slice()).to_string()),
             "u64" => json!(call::<u64>(code_ptr, args.as_slice()).to_string()),
-            // "i128" => json!(call::<i128>(code_ptr, args.as_slice()).to_string()),
-            // "u128" => json!(call::<u128>(code_ptr, args.as_slice()).to_string()),
             "f32" => json!(call::<f32>(code_ptr, args.as_slice())),
             "f64" => json!(call::<f64>(code_ptr, args.as_slice())),
-            "ptr" => json!(call::<*mut i8>(code_ptr, args.as_slice())
-                .as_ref()
-                .unwrap()
-                .to_string()),
+            "ptr" => {
+                let ptr = call::<*mut u8>(code_ptr, args.as_slice());
+                let mut v: Vec<u8> = Vec::new();
+                let slice = std::slice::from_raw_parts(ptr, options.rlen.unwrap());
+                v.write(slice).unwrap();
+                json!(v)
+            }
             "str" => json!(
                 CString::from_raw(call::<*mut i8>(code_ptr, args.as_slice()))
                     .into_string()

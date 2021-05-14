@@ -5,12 +5,10 @@ export type Type =
   | "u16"
   | "u32"
   | "u64"
-  | "u128"
   | "i8"
   | "i16"
   | "i32"
   | "i64"
-  | "i128"
   | "void"
   | "f32"
   | "f64"
@@ -20,7 +18,7 @@ export type Type =
 
 export interface LibraryMethod {
   params?: Type[];
-  returns?: Type;
+  returns?: Type | { type: "ptr"; len: number };
 }
 
 export interface LibraryMethods {
@@ -53,13 +51,13 @@ export class Library {
       name,
       params: (params ?? []).map((e, i) => {
         let type = method.params![i];
-        if (type === "ptr") throw new Error("Param type cannot be ptr");
         if (type === "char") {
-          if (typeof e === "number") {}
-          else if (typeof e === "string") {
+          if (typeof e === "number") {
+          } else if (typeof e === "string") {
             if (e.length !== 1) {
               throw new Error(
-                "Expected char to be of 1 byte, but got " + e.length +
+                "Expected char to be of 1 byte, but got " +
+                  e.length +
                   " instead",
               );
             }
@@ -73,7 +71,12 @@ export class Library {
           value: e,
         };
       }),
-      rtype: method.returns ?? "void",
+      rtype: typeof method.returns === "string"
+        ? method.returns
+        : typeof method.returns === "undefined"
+        ? "void"
+        : method.returns.type,
+      rlen: typeof method.returns === "object" ? method.returns.len : undefined,
     };
 
     return core.opSync("op_dl_call", JSON.stringify(data));
