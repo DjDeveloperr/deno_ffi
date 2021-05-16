@@ -32,30 +32,30 @@ jobs:
           toolchain: stable
           override: true
 
-      - name: log versions
+      - name: Log versions
         run: |
           rustc --version
           cargo --version
 
-      - name: cache cargo registry
+      - name: Cache Cargo registry
         uses: actions/cache@v1
         with:
           path: ~/.cargo/registry
           key: ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
 
-      - name: cache cargo index
+      - name: Cache Cargo index
         uses: actions/cache@v1
         with:
           path: ~/.cargo/git
           key: ${{ runner.os }}-cargo-index-${{ hashFiles('**/Cargo.lock') }}
 
-      - name: cache cargo build
+      - name: Cache Cargo build
         uses: actions/cache@v1
         with:
           path: target
           key: ${{ runner.os }}-cargo-build-target-${{ hashFiles('**/Cargo.lock') }}
 
-      - name: remove old cache
+      - name: Remove old cache
         if: matrix.os == 'windows-latest'
         run: |
           rm target/release/gn_root -Recurse -ErrorAction Ignore
@@ -66,13 +66,17 @@ jobs:
           command: build
           args: --release
 
-      - name: create release
+      - name: Get the version
+        id: get_version
+        run: echo ::set-output name=VERSION::${GITHUB_REF/refs\/tags\//}
+
+      - name: Create release
         uses: softprops/action-gh-release@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          tag_name: ${{ github.ref }}
-          name: v${{ github.ref }}
+          tag_name: ${{ steps.get_version.outputs.VERSION }}
+          name: v${{ steps.get_version.outputs.VERSION }}
           draft: true
           files: |
             target/release/libdeno_ffi.dylib

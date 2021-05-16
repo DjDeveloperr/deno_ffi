@@ -1,6 +1,6 @@
 import { Plug } from "../deps.ts";
 
-const VERSION = "0.0.3";
+const VERSION = "0.0.4";
 const ENV_VAR = Deno.env.get("FFI_PLUGIN_URL");
 const POLICY = ENV_VAR === undefined
   ? Plug.CachePolicy.STORE
