@@ -23,5 +23,17 @@ jobs:
         with:
           deno-version: ${{ matrix.deno }}
 
+      - name: Setup Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: stable
+          override: true
+
+      - name: Build test_lib
+        uses: actions-rs/cargo@v1
+        with:
+          command: cd test_lib && cargo build
+
       - name: Run mod.ts to test deeper
         run: deno run -A --unstable test_lib/mod.ts
