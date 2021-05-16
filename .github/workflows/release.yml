@@ -18,10 +18,14 @@ jobs:
       RUST_BACKTRACE: full
 
     steps:
-      - name: checkout repo
+      - name: Checkout Repo
         uses: actions/checkout@v2
 
-      - name: install stable toolchain
+      - name: Install Deps
+        if: matrix.os == 'macOS-latest'
+        run: brew install autoconf automake libtool libffi
+
+      - name: Setup Rust
         uses: actions-rs/toolchain@v1
         with:
           profile: minimal
