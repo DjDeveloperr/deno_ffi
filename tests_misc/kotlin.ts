@@ -14,7 +14,7 @@ const lib = new Library(
   },
 );
 
-const val = new Uint8Array(lib.call("libnative_symbols"));
+const val = lib.call("libnative_symbols");
 const view = new DataView(val.buffer);
 const fnptr = Number(view.getBigUint64(12 * 8, true));
 

@@ -1,8 +1,0 @@
-{
-    "editor.formatOnSave": true,
-    "deno.enable": true,
-    "deno.unstable": true,
-    "deno.import_intellisense_origins": {
-        "https://deno.land": true
-    }
-}

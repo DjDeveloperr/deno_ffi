@@ -19,7 +19,7 @@ const lib = new Library(
   },
 );
 
-console.log("add", lib.call("add", 1, 2));
+console.log("add:", lib.call("add", 1, 2));
 
 const buf = new Uint8Array(8);
 const view = new DataView(buf.buffer);
@@ -28,6 +28,6 @@ view.setUint32(4, 96, true);
 lib.call("test_struct", [...buf]);
 
 console.log(
-  "hello",
+  "hello:",
   lib.call("hello", "World"),
 );

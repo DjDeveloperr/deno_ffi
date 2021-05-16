@@ -1,4 +1,33 @@
+import { Plug } from "../deps.ts";
+
+const VERSION = "0.0.1";
+const ENV_VAR = Deno.env.get("FFI_PLUGIN_URL");
+const POLICY = ENV_VAR === undefined
+  ? Plug.CachePolicy.STORE
+  : Plug.CachePolicy.NONE;
+const PLUGIN_URL = ENV_VAR ??
+  `https://github.com/DjDeveloperr/deno_ffi/releases/download/${VERSION}/`;
+
+await Plug.prepare({
+  name: "deno_ffi",
+  policy: POLICY,
+  url: PLUGIN_URL,
+});
+
 const core = (Deno as any).core;
+
+function opSync(name: string, data: any, zeroCopy?: Uint8Array) {
+  const res = core.opSync(name, data, zeroCopy);
+  if (typeof res !== "object") {
+    return res;
+  } else {
+    if ("err" in res) {
+      throw new Error(res.err);
+    } else if ("data" in res) {
+      return res.data;
+    } else return res;
+  }
+}
 
 export type Type =
   | "u8"
@@ -34,13 +63,13 @@ export class Library {
   }
 
   constructor(public name: string, public methods: LibraryMethods) {
-    this.#rid = core.opSync("op_dl_open", name);
+    this.#rid = opSync("op_dl_open", name);
   }
 
-  call(
+  call<T = any>(
     name: string | { ptr: number; define: LibraryMethod },
     ...params: any[]
-  ) {
+  ): T {
     const method = typeof name === "object" ? name.define : this.methods[name];
     if (!method) throw new Error("Method not defined");
     if (params.length !== (method.params?.length ?? 0)) {
@@ -84,18 +113,19 @@ export class Library {
       rlen: typeof method.returns === "object" ? method.returns.len : undefined,
     };
 
-    let res = core.opSync("op_dl_call", JSON.stringify(data));
+    let res = opSync("op_dl_call", JSON.stringify(data));
     if (data.rtype === "raw_ptr") res = parseInt(res, 16);
+    if (data.rtype === "ptr") res = new Uint8Array(res);
     return res;
   }
 
   close() {
-    core.opSync("op_dl_close", this.#rid);
+    opSync("op_dl_close", this.#rid);
   }
 }
 
 export function readPointer(addr: number, len: number): Uint8Array {
-  return new Uint8Array(core.opSync("op_dl_ptr_read", {
+  return new Uint8Array(opSync("op_dl_ptr_read", {
     addr,
     len,
   }));
