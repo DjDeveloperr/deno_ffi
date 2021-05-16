@@ -33,5 +33,5 @@ jobs:
       - name: Build test_lib
         run: cd test_lib && cargo build
 
-      - name: Run mod.ts to test deeper
+      - name: Run test
         run: deno run -A --unstable test_lib/mod.ts
