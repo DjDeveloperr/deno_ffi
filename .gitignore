@@ -3,3 +3,4 @@
 /dev.bat
 /prod.bat
 /.vscode
+/tests_misc/dsdk.ts

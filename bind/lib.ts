@@ -1,6 +1,7 @@
-import { Plug } from "../deps.ts";
+import { cache, Plug } from "../deps.ts";
+import { name, version } from "../meta.ts";
 
-const VERSION = "0.0.4";
+const VERSION = version;
 const ENV_VAR = Deno.env.get("FFI_PLUGIN_URL");
 const POLICY = ENV_VAR === undefined
   ? Plug.CachePolicy.STORE
@@ -9,10 +10,41 @@ const PLUGIN_URL = ENV_VAR ??
   `https://github.com/DjDeveloperr/deno_ffi/releases/download/${VERSION}/`;
 
 await Plug.prepare({
-  name: "deno_ffi",
+  name,
   policy: POLICY,
   url: PLUGIN_URL,
 });
+
+export enum CachePolicy {
+  NONE,
+  STORE,
+}
+
+export interface PrepareOptionsBase {
+  policy: CachePolicy;
+}
+
+export type OS = "darwin" | "linux" | "windows";
+
+export interface PrepareOptionsURL extends PrepareOptionsBase {
+  name: string;
+  prefix?: boolean;
+  url: string;
+}
+
+export interface PrepareOptionsURLS extends PrepareOptionsBase {
+  urls: { [name in OS]: string | undefined };
+}
+
+export type PrepareOptions = PrepareOptionsURL | PrepareOptionsURLS;
+
+const extensions: {
+  [name in OS]: string;
+} = {
+  darwin: "dylib",
+  windows: "dll",
+  linux: "so",
+};
 
 const core = (Deno as any).core;
 
@@ -55,6 +87,11 @@ export interface LibraryMethods {
   [name: string]: LibraryMethod;
 }
 
+/**
+ * Represents a Dynamic Library.
+ *
+ * When being constructed, makes op call to create Library resource.
+ */
 export class Library {
   #rid: number;
 
@@ -66,6 +103,28 @@ export class Library {
     this.#rid = opSync("op_dl_open", name);
   }
 
+  /**
+   * Calls a FFI method. You can either use method name (it should be defined in Library.methods) or a pointer address along with definition.
+   *
+   * ```ts
+   * lib.call("method", ...args);
+   *
+   * // For example
+   *
+   * lib.call("add", 1, 2);
+   *
+   * // Using pointers
+   *
+   * lib.call({
+   *   ptr: number,
+   *   define: { params: ["i32", "i32"], returns: "i32" },
+   * }, 1, 2);
+   * ```
+   *
+   * @param name Name of the method (symbol) or a object containing pointer address and method definition (useful for structs that return pointers to further functions)
+   * @param params Params to call method with
+   * @returns Value returned from FFI call
+   */
   call<T = any>(
     name: string | { ptr: number; define: LibraryMethod },
     ...params: any[]
@@ -119,11 +178,60 @@ export class Library {
     return res;
   }
 
+  /** Closes the Dy Library resource (no longer usable after this) */
   close() {
     opSync("op_dl_close", this.#rid);
   }
+
+  /**
+   * Automatically caches the library (either from URL or local path)
+   *
+   * ```ts
+   * const lib = await Library.prepare({
+   *   urls: {
+   *     windows: "path/to/name.dll",
+   *     darwin: "path/to/libname.dylib",
+   *     linux: "path/to/libname.so",
+   *   },
+   * });
+   *
+   * // or alternatively,
+   *
+   * const lib = await Library.prepare({
+   *   name: "name",
+   *   url: "path/to",
+   * });
+   * ```
+   *
+   * @param options Options for caching
+   * @param define Method definitions
+   * @returns The Library object
+   */
+  static async prepare(
+    options: PrepareOptions,
+    define: LibraryMethods,
+  ): Promise<Library> {
+    const url = "url" in options
+      ? `${options.url}/${
+        options.prefix !== false
+          ? (Deno.build.os === "windows" ? "" : "lib")
+          : ""
+      }${options.name}.${extensions[Deno.build.os]}`
+      : options.urls[Deno.build.os];
+    if (!url) {
+      throw new Error(`URL not found to load Library for OS: ${Deno.build.os}`);
+    }
+    const file = await cache(
+      url,
+      options.policy as any,
+      "dylibs",
+    );
+    const lib = new Library(file.path, define);
+    return lib;
+  }
 }
 
+/** Read pointer using its address and a size */
 export function readPointer(addr: number, len: number): Uint8Array {
   return new Uint8Array(opSync("op_dl_ptr_read", {
     addr,
