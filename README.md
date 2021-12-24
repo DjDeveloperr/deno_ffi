@@ -1,3 +1,5 @@
+# Archived: Deno has built-in FFI now and plugins are removed.
+
 # Deno FFI
 
 Plugin to call dynamic library functions in Deno.
